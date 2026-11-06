@@ -1,0 +1,161 @@
+# Pipeline Pizzaria
+
+Pipeline de dados em Python que transforma um ano de vendas de uma pizzaria em indicadores de negócio (KPIs), organizado em três camadas: **raw → refined → gold**.
+
+Projeto do **Desafio Final – Engenheiro de Dados Júnior** da Aceleração EmpregaDados (Instituto NTA). Ele replica a lógica do *Pipeline Olist* visto em aula, usando outro dataset.
+
+## Objetivo
+
+Responder perguntas de negócio de uma pizzaria a partir dos dados brutos de pedidos:
+
+- Quanto a pizzaria faturou no ano e qual é o ticket médio?
+- Como o faturamento evolui mês a mês?
+- Quais categorias, pizzas e tamanhos vendem mais?
+- Em que horários e dias da semana estão os picos de pedidos?
+
+## Dataset
+
+| | |
+|---|---|
+| **Nome** | Pizza Place Sales |
+| **Fonte** | [Kaggle – mysarahmadbhat/pizza-place-sales](https://www.kaggle.com/datasets/mysarahmadbhat/pizza-place-sales) |
+| **Licença** | CC0: Public Domain |
+| **Período** | 01/01/2015 a 31/12/2015 |
+
+| Arquivo | Linhas | Conteúdo |
+|---|---|---|
+| `orders.csv` | 21.350 | pedido, data e hora |
+| `order_details.csv` | 48.620 | itens de cada pedido (pizza e quantidade) |
+| `pizzas.csv` | 96 | pizza por tamanho, com preço |
+| `pizza_types.csv` | 32 | nome, categoria e ingredientes de cada sabor |
+
+Relacionamento: `order_details` → `orders` (por `order_id`) → `pizzas` (por `pizza_id`) → `pizza_types` (por `pizza_type_id`).
+
+> Os dados **não são versionados** no git. Veja em [Como rodar](#como-rodar) onde colocar os CSVs.
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    F["data/fonte<br/>4 CSVs do Kaggle"] -->|ingestao.py| R["data/raw<br/>Parquet, tudo texto"]
+    R -->|transformacao.py| RF["data/refined<br/>tipada + JOIN"]
+    RF -->|agregacao.py| G["data/gold<br/>7 tabelas de KPI"]
+```
+
+O `pipeline.py` executa as três etapas em ordem com um único comando.
+
+| Camada | O que faz | Regras |
+|---|---|---|
+| **raw** | Cópia fiel dos CSVs em Parquet | Todas as colunas como texto (VARCHAR); mesmas linhas e colunas da fonte; nada é limpo ou convertido |
+| **refined** | Dados limpos e tipados, com nomes em português | `CAST` com falha explícita (sem `TRY_CAST`); nulo ou chave duplicada **para** o pipeline; JOIN das 4 tabelas em `itens_pedido` sem perder linhas |
+| **gold** | Uma tabela por pergunta de negócio | Lê só a refined; dinheiro em `DECIMAL(10,2)`; os totais de todos os KPIs precisam bater com a refined, senão o pipeline **para** |
+
+Ferramentas: **Python 3.13**, **DuckDB** (SQL e Parquet), **pandas** (leitura dos CSVs), **pytest** e **pytest-cov**.
+
+### Decisões de dados
+
+- **Encoding:** `pizza_types.csv` não é UTF-8. Ele tem uma aspa `‘` do Windows-1252 em "‘Nduja Salami". O arquivo é lido como `cp1252` e gravado em UTF-8, mantendo o caractere original.
+- **Data e hora** ficam em colunas separadas (`DATE` e `TIME`), para facilitar os KPIs por mês e por hora.
+- **Preço** é `DECIMAL(10,2)`, e não `DOUBLE`, para as somas de dinheiro serem exatas.
+- **Valores da fonte** (`Classic`, `S`, `M`…) são mantidos; só os nomes das colunas foram traduzidos.
+- **Qualidade:** a base não tem nulos, duplicados nem itens órfãos. As validações existem para que uma carga futura com problema pare o pipeline, em vez de gerar números errados em silêncio.
+
+## Estrutura de pastas
+
+```
+pipeline-pizzaria/
+├── data/
+│   ├── fonte/            CSVs originais do Kaggle (fora do git)
+│   ├── raw/              Parquet espelho da fonte (fora do git)
+│   ├── refined/          Parquet tipado (fora do git)
+│   └── gold/             Parquet de KPIs (fora do git)
+├── src/
+│   ├── config.py         caminhos e tabelas da fonte
+│   ├── ingestao.py       fonte -> raw
+│   ├── transformacao.py  raw -> refined (tipagem, validações, JOIN)
+│   ├── agregacao.py      refined -> gold (KPIs)
+│   └── pipeline.py       orquestra tudo, com logging
+├── tests/
+│   ├── test_ingestao.py
+│   ├── test_transformacao.py
+│   ├── test_agregacao.py
+│   └── test_pipeline.py
+├── pytest.ini            configuração dos testes e da cobertura
+├── requirements.txt
+└── README.md
+```
+
+## Como instalar
+
+Pré-requisito: Python 3.13 ou superior.
+
+```powershell
+git clone https://github.com/BigPedro86/pipeline-pizzaria.git
+cd pipeline-pizzaria
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+> No Linux ou macOS, ative o ambiente com `source .venv/bin/activate`.
+> Se o Windows bloquear o `Activate.ps1`, use `.\.venv\Scripts\python.exe` no lugar de `python` nos comandos.
+
+## Como rodar
+
+1. Baixe o dataset no [Kaggle](https://www.kaggle.com/datasets/mysarahmadbhat/pizza-place-sales) e coloque os 4 CSVs em `data/fonte/`. Não abra os arquivos no Excel antes, porque ele altera datas e números ao salvar.
+2. Rode o pipeline completo com um único comando:
+
+```powershell
+python -m src.pipeline
+```
+
+Saída esperada (resumida):
+
+```
+2026-11-05 22:58:12 | INFO | Início: ingestão (fonte -> raw)
+2026-11-05 22:58:12 | INFO |   orders: 21.350 linhas
+...
+2026-11-05 22:58:13 | INFO |   itens_pedido: 48.620 linhas
+...
+2026-11-05 22:58:13 | INFO | Pipeline concluído em 0.48 s
+```
+
+Se alguma etapa falhar, o erro aparece no log com nível `ERROR`, as etapas seguintes não rodam e o comando termina com código de saída 1.
+
+Também é possível rodar uma etapa isolada: `python -m src.ingestao`, `python -m src.transformacao` ou `python -m src.agregacao`.
+
+## Testes e cobertura
+
+```powershell
+python -m pytest
+```
+
+O comando roda os 31 testes e mostra a cobertura de cada arquivo no terminal. Também gera o relatório HTML em `htmlcov/index.html` e **falha se a cobertura ficar abaixo de 70%**. A cobertura atual é de **95%**.
+
+Os testes não usam os dados reais. Cada um monta CSVs ou Parquets pequenos numa pasta temporária, com valores calculados à mão, e cobre também os casos de erro: arquivo ausente, coluna trocada, encoding errado, valor inválido, nulo, chave duplicada, JOIN com perda e total de KPI que não fecha.
+
+## KPIs gerados (camada gold)
+
+| Tabela | Pergunta | Resultado com os dados de 2015 |
+|---|---|---|
+| `resumo_geral` | Quanto vendemos no ano? | **$ 817.860,05** em 21.350 pedidos e 49.574 pizzas; **ticket médio de $ 38,31**; 2,32 pizzas por pedido |
+| `vendas_mensais` | Como o faturamento evolui? | Melhor mês: julho ($ 72.557,90). Pior mês: outubro ($ 64.027,60) |
+| `vendas_por_categoria` | Qual categoria fatura mais? | Classic 26,9% · Supreme 25,5% · Chicken 24,0% · Veggie 23,7% |
+| `ranking_pizzas` | Quais pizzas vendem mais e menos? | Mais faturamento: The Thai Chicken ($ 43.434,25). Mais unidades: The Classic Deluxe (2.453). Menor faturamento: The Brie Carre ($ 11.588,50) |
+| `vendas_por_tamanho` | Qual tamanho sai mais? | L 45,9% · M 30,5% · S 21,8% · XL 1,7% · XXL 0,1% |
+| `pedidos_por_hora` | Qual é o horário de pico? | 12h (2.520 pedidos) e 13h (2.455); funcionamento das 9h às 23h |
+| `pedidos_por_dia_semana` | Qual dia vende mais? | Sexta (70,8 pedidos por dia em média). Domingo é o mais fraco (50,5) |
+
+Definições: faturamento = soma de `quantidade × preço`; ticket médio = faturamento ÷ número de pedidos; a média por dia da semana considera só os dias que tiveram venda (em 2015 houve 7 dias sem venda, entre eles o Natal).
+
+## Próximos passos
+
+- Dashboard em **Streamlit** lendo a camada gold.
+- Gravar o log também em arquivo, para guardar o histórico das execuções.
+- Carga incremental: processar só os pedidos novos, em vez de reprocessar o ano inteiro.
+- Validações de regra de negócio (por exemplo, preço maior que zero e quantidade entre 1 e 10).
+- Rodar os testes automaticamente a cada push com GitHub Actions.
+
+## Autor
+
+Pedro Caio · [github.com/BigPedro86](https://github.com/BigPedro86)
