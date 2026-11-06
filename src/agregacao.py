@@ -1,5 +1,6 @@
 """Agregação: refined/itens_pedido -> gold (uma tabela de KPI por pergunta)."""
 
+from decimal import Decimal
 from pathlib import Path
 
 import duckdb
@@ -89,7 +90,7 @@ def registrar_refined(con: duckdb.DuckDBPyConnection, origem: Path) -> None:
     con.execute(f"CREATE VIEW itens_pedido AS SELECT * FROM '{caminho}'")
 
 
-def somar(con: duckdb.DuckDBPyConnection, tabela: str, coluna: str):
+def somar(con: duckdb.DuckDBPyConnection, tabela: str, coluna: str) -> Decimal | int | None:
     """Retorna a soma de uma coluna de uma tabela."""
     return con.execute(f"SELECT sum({coluna}) FROM {tabela}").fetchone()[0]
 
