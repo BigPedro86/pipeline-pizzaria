@@ -50,7 +50,7 @@ O `pipeline.py` executa as três etapas em ordem com um único comando.
 | **refined** | Dados limpos e tipados, com nomes em português | `CAST` com falha explícita (sem `TRY_CAST`); nulo ou chave duplicada **para** o pipeline; JOIN das 4 tabelas em `itens_pedido` sem perder linhas |
 | **gold** | Uma tabela por pergunta de negócio | Lê só a refined; dinheiro em `DECIMAL(10,2)`; os totais de todos os KPIs precisam bater com a refined, senão o pipeline **para** |
 
-Ferramentas: **Python 3.13**, **DuckDB** (SQL e Parquet), **pandas** (leitura dos CSVs), **pytest** e **pytest-cov**.
+Ferramentas: **Python 3.13**, **DuckDB** (SQL e Parquet), **pandas** (leitura dos CSVs), **pytest** e **pytest-cov**, e **Streamlit** para o painel.
 
 ### Decisões de dados
 
@@ -74,12 +74,16 @@ pipeline-pizzaria/
 │   ├── ingestao.py       fonte -> raw
 │   ├── transformacao.py  raw -> refined (tipagem, validações, JOIN)
 │   ├── agregacao.py      refined -> gold (KPIs)
-│   └── pipeline.py       orquestra tudo, com logging
+│   ├── pipeline.py       orquestra tudo, com logging
+│   └── leitura_gold.py   leitura da gold e formatação para o painel
+├── painel/
+│   └── app.py            dashboard Streamlit
 ├── tests/
 │   ├── test_ingestao.py
 │   ├── test_transformacao.py
 │   ├── test_agregacao.py
-│   └── test_pipeline.py
+│   ├── test_pipeline.py
+│   └── test_leitura_gold.py
 ├── pytest.ini            configuração dos testes e da cobertura
 ├── requirements.txt
 └── README.md
@@ -124,13 +128,31 @@ Se alguma etapa falhar, o erro aparece no log com nível `ERROR`, as etapas segu
 
 Também é possível rodar uma etapa isolada: `python -m src.ingestao`, `python -m src.transformacao` ou `python -m src.agregacao`.
 
+## Painel (Streamlit)
+
+Depois de rodar o pipeline, abra o painel:
+
+```powershell
+streamlit run painel/app.py
+```
+
+O painel abre no navegador, em `http://localhost:8501`, e lê **só a camada gold**. Ele mostra:
+
+- os cartões do ano: faturamento, pedidos, ticket médio e pizzas por pedido;
+- o faturamento mês a mês;
+- o faturamento por categoria e por tamanho;
+- o top 5 e o bottom 5 de pizzas, por faturamento ou por unidades;
+- os picos de pedidos por hora e a média por dia da semana.
+
+Cada gráfico tem tooltip e um botão **"Ver tabela"** com os números. Se a gold ainda não existir, o painel avisa que é preciso rodar o pipeline antes.
+
 ## Testes e cobertura
 
 ```powershell
 python -m pytest
 ```
 
-O comando roda os 31 testes e mostra a cobertura de cada arquivo no terminal. Também gera o relatório HTML em `htmlcov/index.html` e **falha se a cobertura ficar abaixo de 70%**. A cobertura atual é de **95%**.
+O comando roda os 35 testes e mostra a cobertura de cada arquivo no terminal. Também gera o relatório HTML em `htmlcov/index.html` e **falha se a cobertura ficar abaixo de 70%**. A cobertura atual é de **96%**.
 
 Os testes não usam os dados reais. Cada um monta CSVs ou Parquets pequenos numa pasta temporária, com valores calculados à mão, e cobre também os casos de erro: arquivo ausente, coluna trocada, encoding errado, valor inválido, nulo, chave duplicada, JOIN com perda e total de KPI que não fecha.
 
@@ -150,7 +172,7 @@ Definições: faturamento = soma de `quantidade × preço`; ticket médio = fatu
 
 ## Próximos passos
 
-- Dashboard em **Streamlit** lendo a camada gold.
+- Publicar o painel no Streamlit Community Cloud.
 - Gravar o log também em arquivo, para guardar o histórico das execuções.
 - Carga incremental: processar só os pedidos novos, em vez de reprocessar o ano inteiro.
 - Validações de regra de negócio (por exemplo, preço maior que zero e quantidade entre 1 e 10).
