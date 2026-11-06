@@ -1,0 +1,19 @@
+# ambiente
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# credenciais
+.env
+
+# dados: nada versionado, só a estrutura de pastas (.gitkeep)
+data/**
+!data/**/
+!data/**/.gitkeep
+
+# especificações ficam só na máquina local (exigência do desafio)
+specs/
