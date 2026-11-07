@@ -48,7 +48,7 @@ O `pipeline.py` executa as três etapas em ordem com um único comando.
 |---|---|---|
 | **raw** | Cópia fiel dos CSVs em Parquet | Todas as colunas como texto (VARCHAR); mesmas linhas e colunas da fonte; nada é limpo ou convertido |
 | **refined** | Dados limpos e tipados, com nomes em português | `CAST` com falha explícita (sem `TRY_CAST`); nulo ou chave duplicada **para** o pipeline; JOIN das 4 tabelas em `itens_pedido` sem perder linhas |
-| **gold** | Uma tabela por pergunta de negócio | Lê só a refined; dinheiro em `DECIMAL(10,2)`; os totais de todos os KPIs precisam bater com a refined, senão o pipeline **para** |
+| **gold** | Uma tabela por pergunta de negócio | Lê só a refined; cada KPI vem de um arquivo em `sql/gold/<tabela>.sql`; dinheiro em `DECIMAL(10,2)`; os totais de todos os KPIs precisam bater com a refined, senão o pipeline **para** |
 
 Ferramentas: **Python 3.13**, **DuckDB** (SQL e Parquet), **pandas** (leitura dos CSVs), **pytest** e **pytest-cov**, e **Streamlit** para o painel.
 
@@ -60,6 +60,39 @@ Ferramentas: **Python 3.13**, **DuckDB** (SQL e Parquet), **pandas** (leitura do
 - **Valores da fonte** (`Classic`, `S`, `M`…) são mantidos; só os nomes das colunas foram traduzidos.
 - **Qualidade:** a base não tem nulos, duplicados nem itens órfãos. As validações existem para que uma carga futura com problema pare o pipeline, em vez de gerar números errados em silêncio.
 
+## O que é uma linha de cada tabela
+
+**raw** (`data/raw/`): cada arquivo tem as mesmas linhas da fonte.
+
+| Tabela | 1 linha = |
+|---|---|
+| `orders` | 1 pedido |
+| `order_details` | 1 item de um pedido: um sabor num tamanho, com a quantidade pedida |
+| `pizzas` | 1 sabor num tamanho, com o preço |
+| `pizza_types` | 1 sabor, com nome, categoria e ingredientes |
+
+**refined** (`data/refined/`):
+
+| Tabela | 1 linha = | Colunas |
+|---|---|---|
+| `pedidos` | 1 pedido | `id_pedido`, `data`, `hora` |
+| `detalhes_pedido` | 1 item de um pedido | `id_detalhe`, `id_pedido`, `id_pizza`, `quantidade` |
+| `pizzas` | 1 sabor num tamanho | `id_pizza`, `id_tipo_pizza`, `tamanho`, `preco` |
+| `tipos_pizza` | 1 sabor | `id_tipo_pizza`, `nome`, `categoria`, `ingredientes` |
+| `itens_pedido` | 1 item de um pedido, com os dados das 4 tabelas acima juntados por JOIN. É a única tabela que a gold lê | `id_detalhe`, `id_pedido`, `data`, `hora`, `id_pizza`, `id_tipo_pizza`, `nome_pizza`, `categoria`, `tamanho`, `quantidade`, `preco`, `valor_item` (= `quantidade × preco`) |
+
+**gold** (`data/gold/`): o SQL de cada tabela está em `sql/gold/<tabela>.sql`.
+
+| Tabela | 1 linha = |
+|---|---|
+| `resumo_geral` | o ano inteiro (a tabela tem só 1 linha) |
+| `vendas_mensais` | 1 mês |
+| `vendas_por_categoria` | 1 categoria |
+| `ranking_pizzas` | 1 sabor, com todos os tamanhos somados |
+| `vendas_por_tamanho` | 1 tamanho (S, M, L, XL, XXL) |
+| `pedidos_por_hora` | 1 hora do dia em que houve pedido |
+| `pedidos_por_dia_semana` | 1 dia da semana |
+
 ## Estrutura de pastas
 
 ```
@@ -69,11 +102,13 @@ pipeline-pizzaria/
 │   ├── raw/              Parquet espelho da fonte (fora do git)
 │   ├── refined/          Parquet tipado (fora do git)
 │   └── gold/             Parquet de KPIs (fora do git)
+├── sql/
+│   └── gold/             um .sql por KPI (resumo_geral.sql, vendas_mensais.sql, ...)
 ├── src/
-│   ├── config.py         caminhos e tabelas da fonte
+│   ├── config.py         caminhos, tabelas da fonte e lista de KPIs
 │   ├── ingestao.py       fonte -> raw
 │   ├── transformacao.py  raw -> refined (tipagem, validações, JOIN)
-│   ├── agregacao.py      refined -> gold (KPIs)
+│   ├── agregacao.py      refined -> gold (roda os .sql e valida os totais)
 │   ├── pipeline.py       orquestra tudo, com logging
 │   └── leitura_gold.py   leitura da gold e formatação para o painel
 ├── painel/
@@ -152,9 +187,9 @@ Cada gráfico tem tooltip e um botão **"Ver tabela"** com os números. Se a gol
 python -m pytest
 ```
 
-O comando roda os 35 testes e mostra a cobertura de cada arquivo no terminal. Também gera o relatório HTML em `htmlcov/index.html` e **falha se a cobertura ficar abaixo de 70%**. A cobertura atual é de **96%**.
+O comando roda os 37 testes e mostra a cobertura de cada arquivo no terminal. Também gera o relatório HTML em `htmlcov/index.html` e **falha se a cobertura ficar abaixo de 70%**. A cobertura atual é de **96%**.
 
-Os testes não usam os dados reais. Cada um monta CSVs ou Parquets pequenos numa pasta temporária, com valores calculados à mão, e cobre também os casos de erro: arquivo ausente, coluna trocada, encoding errado, valor inválido, nulo, chave duplicada, JOIN com perda e total de KPI que não fecha.
+Os testes não usam os dados reais. Cada um monta CSVs ou Parquets pequenos numa pasta temporária, com valores calculados à mão, e cobre também os casos de erro: arquivo ausente, coluna trocada, encoding errado, valor inválido, nulo, chave duplicada, JOIN com perda, total de KPI que não fecha e KPI sem arquivo `.sql`.
 
 ## KPIs gerados (camada gold)
 
