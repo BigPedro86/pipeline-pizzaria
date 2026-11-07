@@ -5,76 +5,27 @@ from pathlib import Path
 
 import duckdb
 
-from src.config import PASTA_GOLD, PASTA_REFINED
+from src.config import PASTA_GOLD, PASTA_REFINED, PASTA_SQL_GOLD, TABELAS_GOLD
 
-# tabela gold -> SELECT sobre a view itens_pedido
-CONSULTAS_GOLD: dict[str, str] = {
-    "resumo_geral": """
-        SELECT sum(valor_item)                    AS faturamento,
-               count(DISTINCT id_pedido)          AS pedidos,
-               CAST(sum(quantidade) AS INTEGER)   AS pizzas_vendidas,
-               CAST(sum(valor_item) / count(DISTINCT id_pedido) AS DECIMAL(10,2)) AS ticket_medio,
-               CAST(sum(quantidade) / count(DISTINCT id_pedido) AS DECIMAL(10,2)) AS pizzas_por_pedido
-        FROM itens_pedido
-    """,
-    "vendas_mensais": """
-        SELECT CAST(date_trunc('month', data) AS DATE) AS mes,
-               count(DISTINCT id_pedido)              AS pedidos,
-               CAST(sum(quantidade) AS INTEGER)       AS pizzas_vendidas,
-               sum(valor_item)                        AS faturamento,
-               CAST(sum(valor_item) / count(DISTINCT id_pedido) AS DECIMAL(10,2)) AS ticket_medio
-        FROM itens_pedido
-        GROUP BY 1
-        ORDER BY 1
-    """,
-    "vendas_por_categoria": """
-        SELECT categoria,
-               CAST(sum(quantidade) AS INTEGER) AS pizzas_vendidas,
-               sum(valor_item) AS faturamento,
-               CAST(100 * sum(valor_item) / sum(sum(valor_item)) OVER () AS DECIMAL(5,2)) AS participacao_pct
-        FROM itens_pedido
-        GROUP BY 1
-        ORDER BY faturamento DESC
-    """,
-    "ranking_pizzas": """
-        SELECT nome_pizza, categoria,
-               CAST(sum(quantidade) AS INTEGER) AS pizzas_vendidas,
-               sum(valor_item) AS faturamento,
-               rank() OVER (ORDER BY sum(quantidade) DESC) AS posicao_quantidade,
-               rank() OVER (ORDER BY sum(valor_item) DESC) AS posicao_faturamento
-        FROM itens_pedido
-        GROUP BY 1, 2
-        ORDER BY posicao_faturamento, nome_pizza
-    """,
-    "vendas_por_tamanho": """
-        SELECT tamanho,
-               CAST(sum(quantidade) AS INTEGER) AS pizzas_vendidas,
-               sum(valor_item) AS faturamento,
-               CAST(100 * sum(valor_item) / sum(sum(valor_item)) OVER () AS DECIMAL(5,2)) AS participacao_pct
-        FROM itens_pedido
-        GROUP BY 1
-        ORDER BY list_position(['S', 'M', 'L', 'XL', 'XXL'], tamanho)
-    """,
-    "pedidos_por_hora": """
-        SELECT hour(hora)                AS hora,
-               count(DISTINCT id_pedido) AS pedidos,
-               sum(valor_item)           AS faturamento
-        FROM itens_pedido
-        GROUP BY 1
-        ORDER BY 1
-    """,
-    # média = pedidos / nº de datas com venda daquele dia da semana
-    "pedidos_por_dia_semana": """
-        SELECT isodow(data) AS num_dia,
-               ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'][isodow(data)] AS dia_semana,
-               count(DISTINCT id_pedido) AS pedidos,
-               sum(valor_item)           AS faturamento,
-               CAST(count(DISTINCT id_pedido) / count(DISTINCT data) AS DECIMAL(10,2)) AS media_pedidos_por_dia
-        FROM itens_pedido
-        GROUP BY 1, 2
-        ORDER BY 1
-    """,
-}
+
+def carregar_consultas(
+    pasta: Path = PASTA_SQL_GOLD, tabelas: list[str] = TABELAS_GOLD
+) -> dict[str, str]:
+    """Lê sql/gold/<tabela>.sql de cada KPI e retorna {tabela: SELECT}.
+
+    Para o pipeline se faltar o .sql de algum KPI.
+    """
+    consultas = {}
+    for tabela in tabelas:
+        arquivo = pasta / f"{tabela}.sql"
+        if not arquivo.exists():
+            raise FileNotFoundError(f"KPI sem arquivo SQL: {arquivo}")
+        consultas[tabela] = arquivo.read_text(encoding="utf-8")
+    return consultas
+
+
+# tabela gold -> SELECT sobre a view itens_pedido (lido de sql/gold/)
+CONSULTAS_GOLD: dict[str, str] = carregar_consultas()
 
 # tabelas cuja soma de faturamento / pedidos deve bater com o resumo_geral
 TABELAS_COM_FATURAMENTO: list[str] = [
