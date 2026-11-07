@@ -8,7 +8,8 @@ import duckdb
 import pytest
 
 from src import agregacao
-from src.agregacao import agregar_tudo
+from src.agregacao import agregar_tudo, carregar_consultas
+from src.config import PASTA_SQL_GOLD, TABELAS_GOLD
 
 # 3 pedidos: 2 em jan (quinta 01/01 e sexta 02/01), 1 em fev (segunda 02/02)
 ITENS = """
@@ -119,6 +120,20 @@ def test_hora_e_dia_da_semana(refined, tmp_path):
     ]
     dias = ler(tmp_path / "gold", "pedidos_por_dia_semana")
     assert [(d[0], d[1], d[2]) for d in dias] == [(1, "segunda", 1), (4, "quinta", 1), (5, "sexta", 1)]
+
+
+def test_cada_kpi_tem_seu_arquivo_sql():
+    """Um .sql por KPI em sql/gold/, nem a mais nem a menos."""
+    arquivos = sorted(p.stem for p in PASTA_SQL_GOLD.glob("*.sql"))
+    assert arquivos == sorted(TABELAS_GOLD)
+    assert list(agregacao.CONSULTAS_GOLD) == TABELAS_GOLD
+
+
+def test_kpi_sem_sql_para_o_pipeline(tmp_path):
+    """Se faltar o .sql de um KPI, o erro diz qual arquivo falta."""
+    (tmp_path / "resumo_geral.sql").write_text("SELECT 1", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="vendas_mensais.sql"):
+        carregar_consultas(tmp_path, ["resumo_geral", "vendas_mensais"])
 
 
 def test_total_que_nao_fecha_para_o_pipeline(refined, tmp_path, monkeypatch):
