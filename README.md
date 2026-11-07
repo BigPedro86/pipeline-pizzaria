@@ -205,6 +205,22 @@ Os testes não usam os dados reais. Cada um monta CSVs ou Parquets pequenos numa
 
 Definições: faturamento = soma de `quantidade × preço`; ticket médio = faturamento ÷ número de pedidos; a média por dia da semana considera só os dias que tiveram venda (em 2015 houve 7 dias sem venda, entre eles o Natal).
 
+## Uso de IA
+
+Comecei este projeto do zero e usei IA (Claude) durante todo o desenvolvimento. Ela me explicou como montar a estrutura do pipeline em camadas, me ajudou a escrever o código e corrigiu meus erros. A cada correção, explicou o motivo, e isso foi o que mais me ajudou a aprender.
+
+**Onde os erros aconteceram**
+
+- **Transformação (raw → refined):** foi a parte mais difícil para mim. Digitei muito código errado (tipos, `CAST`, nomes de colunas, o JOIN), e a IA apontava o erro e explicava cada situação antes de seguirmos.
+- **Checklist final:** a IA conferiu o projeto e disse que todos os requisitos estavam cumpridos. Ela tinha assumido que conhecia os requisitos, mas eu conferi com o enunciado oficial da aula, e faltavam três itens: um arquivo `.sql` por indicador, esta seção sobre IA e a descrição do que é uma linha de cada tabela. Os três foram feitos depois disso. A lição foi que a IA não substitui ler o enunciado.
+
+**Como trabalhei para não aceitar nada sem conferir**
+
+- Fiz uma etapa por vez. Só fazia o commit depois de rodar os testes e o pipeline e de entender o que tinha sido feito.
+- As validações do pipeline (nulos, chaves duplicadas, JOIN sem perda e totais dos KPIs batendo com a refined) servem justamente para um erro, meu ou da IA, parar o pipeline em vez de gerar um número errado.
+
+**O que aprendi sobre usar IA:** um prompt bem feito, direto e com o objetivo claro faz muita diferença na qualidade da resposta. E a responsabilidade de entender e defender o código continua sendo minha.
+
 ## Próximos passos
 
 - Publicar o painel no Streamlit Community Cloud.
